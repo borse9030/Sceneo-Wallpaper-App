@@ -1,0 +1,218 @@
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
+import '../../../core/theme/colors.dart';
+import '../../../core/widgets/skeleton_loaders.dart';
+
+class ManageCategoriesView extends StatefulWidget {
+  const ManageCategoriesView({super.key});
+
+  @override
+  State<ManageCategoriesView> createState() => _ManageCategoriesViewState();
+}
+
+class _ManageCategoriesViewState extends State<ManageCategoriesView> {
+  final TextEditingController _categoryController = TextEditingController();
+  bool _isUploading = false;
+
+  Future<void> _uploadImageForCategory(String docId) async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? result = await picker.pickImage(source: ImageSource.gallery);
+    if (result == null) return;
+
+    if (!mounted) return;
+    
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('https://api.cloudinary.com/v1_1/dzvmyxmjj/image/upload'),
+      );
+      final bytes = await result.readAsBytes();
+      request.files.add(http.MultipartFile.fromBytes('file', bytes, filename: result.name));
+      request.fields['upload_preset'] = 'sceneo_uploads';
+
+      final response = await request.send();
+      final responseData = await response.stream.toBytes();
+      final jsonMap = jsonDecode(String.fromCharCodes(responseData));
+
+      if (response.statusCode == 200) {
+        final coverImageUrl = jsonMap['secure_url'];
+        await FirebaseFirestore.instance.collection('categories').doc(docId).update({
+          'coverImageUrl': coverImageUrl,
+        });
+        
+        if (mounted) {
+          Navigator.pop(context); // Close loading dialog
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Category image updated!')),
+          );
+        }
+      } else {
+        throw Exception('Failed to upload image: ${jsonMap['error']['message']}');
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _addCategory() async {
+    final name = _categoryController.text.trim();
+    if (name.isEmpty) return;
+
+    setState(() {
+      _isUploading = true;
+    });
+
+    try {
+      await FirebaseFirestore.instance.collection('categories').add({
+        'name': name,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      _categoryController.clear();
+      setState(() {
+        _isUploading = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Category added!')),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isUploading = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteCategory(String docId) async {
+    try {
+      await FirebaseFirestore.instance.collection('categories').doc(docId).delete();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Category deleted')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _categoryController,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'New Category Name',
+                        hintStyle: const TextStyle(color: Colors.white38),
+                        filled: true,
+                        fillColor: Colors.white.withOpacity(0.05),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.accent,
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                    onPressed: _isUploading ? null : _addCategory,
+                    child: _isUploading
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Text('Add', style: TextStyle(color: Colors.white)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance.collection('categories').orderBy('createdAt', descending: true).snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const StandardListSkeleton(itemCount: 8);
+              }
+              if (snapshot.hasError) {
+                return const Center(child: Text('Error loading categories', style: TextStyle(color: Colors.white)));
+              }
+
+              final docs = snapshot.data?.docs ?? [];
+              if (docs.isEmpty) {
+                return const Center(child: Text('No categories yet', style: TextStyle(color: Colors.white54)));
+              }
+
+              return ListView.builder(
+                physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+                itemCount: docs.length,
+                itemBuilder: (context, index) {
+                  final doc = docs[index];
+                  final name = doc['name'] as String;
+                  final Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+                  final coverUrl = data['coverImageUrl'] as String?;
+
+                  return ListTile(
+                    leading: coverUrl != null 
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.network(coverUrl, width: 40, height: 40, fit: BoxFit.cover),
+                          )
+                        : Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(Icons.category, color: Colors.white54),
+                          ),
+                    title: Text(name, style: const TextStyle(color: Colors.white)),
+                    subtitle: const Text('Long press to upload image', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                    onLongPress: () => _uploadImageForCategory(doc.id),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.redAccent),
+                      onPressed: () => _deleteCategory(doc.id),
+                    ),
+                  ).animate().fade(delay: (30 * index).ms).slideX(begin: 0.05);
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
