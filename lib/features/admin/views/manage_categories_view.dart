@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
@@ -69,7 +70,7 @@ class _ManageCategoriesViewState extends State<ManageCategoriesView> {
     }
   }
 
-  Future<void> _addCategory() async {
+  Future<void> _addCategory(int currentTotal) async {
     final name = _categoryController.text.trim();
     if (name.isEmpty) return;
 
@@ -81,6 +82,7 @@ class _ManageCategoriesViewState extends State<ManageCategoriesView> {
       await FirebaseFirestore.instance.collection('categories').add({
         'name': name,
         'createdAt': FieldValue.serverTimestamp(),
+        'orderIndex': currentTotal, // Append to the end
       });
       _categoryController.clear();
       setState(() {
@@ -116,98 +118,163 @@ class _ManageCategoriesViewState extends State<ManageCategoriesView> {
     }
   }
 
+  void _onReorder(int oldIndex, int newIndex, List<QueryDocumentSnapshot> docs) async {
+    if (oldIndex < newIndex) {
+      newIndex -= 1;
+    }
+    
+    // Extract data and modify locally first to ensure UI feels instantaneous if needed,
+    // but the proper way is to update Firestore and let the stream reload it.
+    final List<QueryDocumentSnapshot> localDocs = List.from(docs);
+    final item = localDocs.removeAt(oldIndex);
+    localDocs.insert(newIndex, item);
+
+    final batch = FirebaseFirestore.instance.batch();
+    for (int i = 0; i < localDocs.length; i++) {
+      batch.update(localDocs[i].reference, {'orderIndex': i});
+    }
+    await batch.commit();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _categoryController,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: InputDecoration(
-                        hintText: 'New Category Name',
-                        hintStyle: const TextStyle(color: Colors.white38),
-                        filled: true,
-                        fillColor: Colors.white.withOpacity(0.05),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.accent,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    ),
-                    onPressed: _isUploading ? null : _addCategory,
-                    child: _isUploading
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Text('Add', style: TextStyle(color: Colors.white)),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
         Expanded(
           child: StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance.collection('categories').orderBy('createdAt', descending: true).snapshots(),
+            stream: FirebaseFirestore.instance.collection('categories').snapshots(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const StandardListSkeleton(itemCount: 8);
               }
               if (snapshot.hasError) {
-                return const Center(child: Text('Error loading categories', style: TextStyle(color: Colors.white)));
+                return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.white)));
               }
 
-              final docs = snapshot.data?.docs ?? [];
-              if (docs.isEmpty) {
-                return const Center(child: Text('No categories yet', style: TextStyle(color: Colors.white54)));
-              }
-
-              return ListView.builder(
-                physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-                itemCount: docs.length,
-                itemBuilder: (context, index) {
-                  final doc = docs[index];
-                  final name = doc['name'] as String;
-                  final Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-                  final coverUrl = data['coverImageUrl'] as String?;
-
-                  return ListTile(
-                    leading: coverUrl != null 
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Image.network(coverUrl, width: 40, height: 40, fit: BoxFit.cover),
-                          )
-                        : Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
+              var docs = snapshot.data?.docs ?? [];
+              
+              // Sort locally to avoid Firestore composite index errors
+              docs.sort((a, b) {
+                final aData = a.data() as Map<String, dynamic>;
+                final bData = b.data() as Map<String, dynamic>;
+                final aOrder = aData['orderIndex'] ?? 0;
+                final bOrder = bData['orderIndex'] ?? 0;
+                
+                if (aOrder != bOrder) {
+                  return aOrder.compareTo(bOrder);
+                }
+                
+                // Fallback to name or createdAt
+                final aName = aData['name'] ?? '';
+                final bName = bData['name'] ?? '';
+                return aName.compareTo(bName);
+              });
+              
+              return Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _categoryController,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: InputDecoration(
+                              hintText: 'New Category Name',
+                              hintStyle: const TextStyle(color: Colors.white38),
+                              filled: true,
+                              fillColor: Colors.white.withOpacity(0.05),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide.none,
+                              ),
                             ),
-                            child: const Icon(Icons.category, color: Colors.white54),
                           ),
-                    title: Text(name, style: const TextStyle(color: Colors.white)),
-                    subtitle: const Text('Long press to upload image', style: TextStyle(color: Colors.white38, fontSize: 12)),
-                    onLongPress: () => _uploadImageForCategory(doc.id),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.redAccent),
-                      onPressed: () => _deleteCategory(doc.id),
+                        ),
+                        const SizedBox(width: 16),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.accent,
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          ),
+                          onPressed: _isUploading ? null : () => _addCategory(docs.length),
+                          child: _isUploading
+                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              : const Text('Add', style: TextStyle(color: Colors.white)),
+                        ),
+                      ],
                     ),
-                  ).animate().fade(delay: (30 * index).ms).slideX(begin: 0.05);
-                },
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('Drag and drop to reorder', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                    ),
+                  ),
+                  Expanded(
+                    child: docs.isEmpty
+                        ? const Center(child: Text('No categories yet', style: TextStyle(color: Colors.white54)))
+                        : ReorderableListView.builder(
+                            physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+                            onReorder: (oldIndex, newIndex) => _onReorder(oldIndex, newIndex, docs),
+                            itemCount: docs.length,
+                            itemBuilder: (context, index) {
+                              final doc = docs[index];
+                              final name = doc['name'] as String;
+                              final Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+                              final coverUrl = data['coverImageUrl'] as String?;
+
+                              return Container(
+                                key: ValueKey(doc.id),
+                                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.02),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: ListTile(
+                                  leading: coverUrl != null 
+                                      ? ClipRRect(
+                                          borderRadius: BorderRadius.circular(8),
+                                          child: CachedNetworkImage(
+                                            imageUrl: coverUrl, 
+                                            width: 40, 
+                                            height: 40, 
+                                            memCacheWidth: 200, // Small image
+                                            fit: BoxFit.cover,
+                                            placeholder: (context, url) => const Icon(Icons.image, color: Colors.white24),
+                                          ),
+                                        )
+                                      : Container(
+                                          width: 40,
+                                          height: 40,
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: const Icon(Icons.category, color: Colors.white54),
+                                        ),
+                                  title: Text(name, style: const TextStyle(color: Colors.white)),
+                                  subtitle: const Text('Long press image icon to upload cover', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                                  onLongPress: () => _uploadImageForCategory(doc.id),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.delete, color: Colors.redAccent),
+                                        onPressed: () => _deleteCategory(doc.id),
+                                      ),
+                                      const Icon(Icons.drag_handle, color: Colors.white54),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
               );
             },
           ),

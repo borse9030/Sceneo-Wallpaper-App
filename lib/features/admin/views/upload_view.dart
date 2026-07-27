@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart'; // For kIsWeb
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:palette_generator/palette_generator.dart';
 import '../../../core/theme/colors.dart';
 
 class UploadView extends StatefulWidget {
@@ -21,6 +22,7 @@ class _UploadViewState extends State<UploadView> {
   bool _isUploading = false;
   
   String? _selectedCategory;
+  String _selectedStatus = 'published';
   bool _isFeatured = false;
   bool _isTrending = false;
 
@@ -44,6 +46,18 @@ class _UploadViewState extends State<UploadView> {
       setState(() {
         _previewFiles = results;
       });
+    }
+  }
+
+  Future<String> _extractDominantColor(XFile file) async {
+    try {
+      if (kIsWeb) return '#1A1A2E'; // FileImage doesn't work on web easily
+      final imageProvider = FileImage(File(file.path));
+      final palette = await PaletteGenerator.fromImageProvider(imageProvider);
+      final color = palette.dominantColor?.color ?? const Color(0xFF1A1A2E);
+      return '#${color.value.toRadixString(16).substring(2, 8).toUpperCase()}';
+    } catch (e) {
+      return '#1A1A2E';
     }
   }
 
@@ -87,10 +101,18 @@ class _UploadViewState extends State<UploadView> {
 
       // 2. Upload main files
       List<String> uploadedMainUrls = [];
+      String dominantColor = '#1A1A2E';
+      String thumbnailUrl = '';
       bool isVideo = false;
 
       for (final mainFile in _mainFiles) {
         if (mainFile.name.toLowerCase().endsWith('mp4')) isVideo = true;
+        
+        // Extract dominant color from the very first image
+        if (!isVideo && dominantColor == '#1A1A2E') {
+          dominantColor = await _extractDominantColor(mainFile);
+        }
+
         final endpoint = mainFile.name.toLowerCase().endsWith('mp4') ? 'video/upload' : 'image/upload';
         final request = http.MultipartRequest(
           'POST',
@@ -106,7 +128,13 @@ class _UploadViewState extends State<UploadView> {
         final jsonMap = jsonDecode(String.fromCharCodes(responseData));
 
         if (response.statusCode == 200) {
-          uploadedMainUrls.add(jsonMap['secure_url']);
+          final secureUrl = jsonMap['secure_url'] as String;
+          uploadedMainUrls.add(secureUrl);
+          
+          if (thumbnailUrl.isEmpty && !isVideo) {
+            // Generate auto-thumbnail via Cloudinary transformation
+            thumbnailUrl = secureUrl.replaceFirst('/upload/', '/upload/c_fill,w_400,q_auto,f_auto/');
+          }
         } else {
           if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to upload main file: ${jsonMap['error']['message']}')));
         }
@@ -117,9 +145,12 @@ class _UploadViewState extends State<UploadView> {
           'title': _titleController.text.trim(),
           'imageUrls': uploadedMainUrls,
           'previewUrls': uploadedPreviewUrls,
+          'thumbnailUrl': thumbnailUrl.isNotEmpty ? thumbnailUrl : uploadedMainUrls.first,
+          'dominantColor': dominantColor,
           'type': isVideo ? 'video' : 'image',
           'category': _selectedCategory,
           'tags': _tagsController.text.split(',').map((e) => e.trim()).toList(),
+          'status': _selectedStatus,
           'createdAt': FieldValue.serverTimestamp(),
           'featured': _isFeatured,
           'trending': _isTrending,
@@ -262,6 +293,31 @@ class _UploadViewState extends State<UploadView> {
                   });
                 },
               );
+            },
+          ),
+          const SizedBox(height: 16),
+          // Status Dropdown
+          DropdownButtonFormField<String>(
+            value: _selectedStatus,
+            dropdownColor: AppColors.surface,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              labelText: 'Status',
+              labelStyle: const TextStyle(color: Colors.white54),
+              filled: true,
+              fillColor: Colors.white.withOpacity(0.05),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+            ),
+            items: const [
+              DropdownMenuItem(value: 'published', child: Text('Published')),
+              DropdownMenuItem(value: 'draft', child: Text('Draft')),
+            ],
+            onChanged: (val) {
+              if (val != null) {
+                setState(() {
+                  _selectedStatus = val;
+                });
+              }
             },
           ),
           const SizedBox(height: 16),

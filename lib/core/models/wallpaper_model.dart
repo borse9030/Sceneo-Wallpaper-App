@@ -14,6 +14,7 @@ class WallpaperModel {
   final String dominantColor;
   final String type; // 'image' or 'video'
   final List<String> previewUrls;
+  final String status; // 'published' or 'draft'
 
   WallpaperModel({
     required this.id,
@@ -30,6 +31,7 @@ class WallpaperModel {
     required this.dominantColor,
     this.type = 'image',
     this.previewUrls = const [],
+    this.status = 'published',
   });
 
   factory WallpaperModel.fromFirestore(Map<String, dynamic> data, String documentId) {
@@ -40,11 +42,22 @@ class WallpaperModel {
       parsedImageUrls = [data['imageUrl']];
     }
 
+    String tUrl = data['thumbnailUrl'] ?? '';
+    if (tUrl.isEmpty && parsedImageUrls.isNotEmpty) {
+      String url = parsedImageUrls.first;
+      if (url.contains('/upload/') && !url.contains('c_fill')) {
+        tUrl = url.replaceFirst('/upload/', '/upload/c_fill,w_400,q_auto,f_auto/');
+      } else {
+        tUrl = url;
+      }
+    }
+
     return WallpaperModel(
       id: documentId,
       title: data['title'] ?? 'Untitled',
       imageUrls: parsedImageUrls,
-      thumbnailUrl: parsedImageUrls.isNotEmpty ? parsedImageUrls.first : '',      category: data['category'] ?? 'Uncategorized',
+      thumbnailUrl: tUrl,
+      category: data['category'] ?? 'Uncategorized',
       tags: List<String>.from(data['tags'] ?? []),
       resolution: data['resolution'] ?? '4K',
       featured: data['featured'] ?? false,
@@ -54,6 +67,7 @@ class WallpaperModel {
       dominantColor: data['dominantColor'] ?? '#1A1A2E',
       type: data['type'] ?? 'image',
       previewUrls: List<String>.from(data['previewUrls'] ?? []),
+      status: data['status'] ?? 'published',
     );
   }
 }

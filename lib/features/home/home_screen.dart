@@ -63,56 +63,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(70),
-        child: AppBar(
-          backgroundColor: const Color(0xF2000000), // background 95% opacity (pre-computed)
-          elevation: 0,
-          title: _isSearching
-              ? TextField(
-                  controller: _searchController,
-                  style: const TextStyle(color: Colors.white),
-                  autofocus: true,
-                  decoration: const InputDecoration(
-                    hintText: 'Search wallpapers...',
-                    hintStyle: TextStyle(color: _kWhite54),
-                    border: InputBorder.none,
-                  ),
-                  onChanged: (value) {
-                    setState(() {
-                      _searchQuery = value;
-                      _selectedCategory = null;
-                    });
-                  },
-                )
-              : GestureDetector(
-                  onLongPress: () => context.push('/about'),
-                  child: const Text(
-                    'Sceneo',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w300,
-                      fontSize: 24,
-                      letterSpacing: 1.5,
-                    ),
-                  ),
-                ),
-          actions: [
-            IconButton(
-              icon: Icon(_isSearching ? Icons.close : Icons.search, color: Colors.white),
-              onPressed: () {
-                setState(() {
-                  if (_isSearching) {
-                    _clearFilters();
-                  } else {
-                    _isSearching = true;
-                  }
-                });
-              },
-            ),
-          ],
-        ),
-      ),
+      backgroundColor: AppColors.background,
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('wallpapers')
@@ -129,10 +80,10 @@ class _HomeScreenState extends State<HomeScreen> {
           }
 
           final docs = snapshot.data?.docs ?? [];
-          final allWallpapers = docs
-              .map((doc) =>
-                  WallpaperModel.fromFirestore(doc.data() as Map<String, dynamic>, doc.id))
-              .toList();
+          var allWallpapers = docs.map((doc) => WallpaperModel.fromFirestore(doc.data() as Map<String, dynamic>, doc.id)).toList();
+              
+          // Only show published wallpapers to users
+          allWallpapers = allWallpapers.where((w) => w.status == 'published').toList();
 
           if (allWallpapers.isEmpty) {
             return const Center(
@@ -147,11 +98,10 @@ class _HomeScreenState extends State<HomeScreen> {
           // ── Derived data (computed once per snapshot) ──────────────────
           List<WallpaperModel> filteredWallpapers;
           if (_searchQuery.isNotEmpty) {
-            final query = _searchQuery.toLowerCase();
+            final queryWords = _searchQuery.toLowerCase().split(' ').where((w) => w.isNotEmpty).toList();
             filteredWallpapers = allWallpapers.where((w) {
-              return w.title.toLowerCase().contains(query) ||
-                  w.category.toLowerCase().contains(query) ||
-                  w.tags.any((tag) => tag.toLowerCase().contains(query));
+              final searchableString = '${w.title} ${w.category} ${w.tags.join(' ')}'.toLowerCase();
+              return queryWords.every((word) => searchableString.contains(word));
             }).toList();
           } else if (_selectedCategory != null) {
             filteredWallpapers =
@@ -179,7 +129,54 @@ class _HomeScreenState extends State<HomeScreen> {
             // Cacheextent improves scroll smoothness by pre-rendering off-screen items
             cacheExtent: 500,
             slivers: [
-              const SliverToBoxAdapter(child: SizedBox(height: 90)),
+              SliverAppBar(
+                pinned: true,
+                backgroundColor: AppColors.background, // Match solid background
+                elevation: 0,
+                toolbarHeight: 70,
+                title: _isSearching
+                    ? TextField(
+                        controller: _searchController,
+                        style: const TextStyle(color: Colors.white),
+                        autofocus: true,
+                        decoration: const InputDecoration(
+                          hintText: 'Search wallpapers...',
+                          hintStyle: TextStyle(color: _kWhite54),
+                          border: InputBorder.none,
+                        ),
+                        onChanged: (value) {
+                          setState(() {
+                            _searchQuery = value;
+                            _selectedCategory = null;
+                          });
+                        },
+                      )
+                    : GestureDetector(
+                        onLongPress: () => context.push('/about'),
+                        child: const Text(
+                          'Sceneo',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w300,
+                            fontSize: 24,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                      ),
+                actions: [
+                  IconButton(
+                    icon: Icon(_isSearching ? Icons.close : Icons.search, color: Colors.white),
+                    onPressed: () {
+                      setState(() {
+                        if (_isSearching) {
+                          _clearFilters();
+                        } else {
+                          _isSearching = true;
+                        }
+                      });
+                    },
+                  ),
+                ],
+              ),
 
               // ── Featured Carousel ───────────────────────────────────────
               if (!_isFiltering && displayFeatured.isNotEmpty) ...[
@@ -217,8 +214,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
               // ── Category Filter Chips ───────────────────────────────────
               if (categories.isNotEmpty)
-                SliverToBoxAdapter(
-                  child: SizedBox(
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: _CategoryHeaderDelegate(
                     height: 54,
                     child: ListView.builder(
                       scrollDirection: Axis.horizontal,
@@ -456,6 +454,7 @@ class FeaturedWallpaperCard extends StatelessWidget {
               CachedNetworkImage(
                 imageUrl: wallpaper.imageUrl,
                 fit: BoxFit.cover,
+                memCacheWidth: 800, // Featured is larger
                 fadeInDuration: const Duration(milliseconds: 300),
                 placeholder: (context, url) => ColoredBox(color: placeholderColor),
                 errorWidget: (context, url, error) =>
@@ -579,6 +578,7 @@ class _HorizontalCard extends StatelessWidget {
                 CachedNetworkImage(
                   imageUrl: imageUrl,
                   fit: BoxFit.cover,
+                  memCacheWidth: 400,
                   fadeInDuration: const Duration(milliseconds: 250),
                   placeholder: (context, url) => ColoredBox(color: placeholderColor),
                   errorWidget: (context, url, error) =>
@@ -661,6 +661,7 @@ class _UniformGridItem extends StatelessWidget {
               CachedNetworkImage(
                 imageUrl: imageUrl,
                 fit: BoxFit.cover,
+                memCacheWidth: 400,
                 fadeInDuration: const Duration(milliseconds: 250),
                 placeholder: (context, url) => ColoredBox(color: placeholderColor),
                 errorWidget: (context, url, error) => const ColoredBox(
@@ -840,4 +841,31 @@ class CategoryChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
       _CategoryChip(title: title, isSelected: isSelected, onTap: onTap);
+}
+
+class _CategoryHeaderDelegate extends SliverPersistentHeaderDelegate {
+  final Widget child;
+  final double height;
+
+  _CategoryHeaderDelegate({required this.child, required this.height});
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Container(
+      color: AppColors.background,
+      height: height,
+      child: child,
+    );
+  }
+
+  @override
+  double get maxExtent => height;
+
+  @override
+  double get minExtent => height;
+
+  @override
+  bool shouldRebuild(covariant _CategoryHeaderDelegate oldDelegate) {
+    return oldDelegate.child != child || oldDelegate.height != height;
+  }
 }

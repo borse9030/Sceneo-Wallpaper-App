@@ -12,7 +12,10 @@ import '../../features/admin/decoy_screen.dart';
 import '../../features/admin/admin_upload_screen.dart';
 import '../../core/models/wallpaper_model.dart';
 
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+
 final goRouter = GoRouter(
+  navigatorKey: rootNavigatorKey,
   initialLocation: '/',
   routes: [
     GoRoute(

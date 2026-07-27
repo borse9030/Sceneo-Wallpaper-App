@@ -107,7 +107,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SliverAppBar(
             pinned: true,
             floating: true,
-            backgroundColor: AppColors.background.withOpacity(0.95),
+            backgroundColor: AppColors.background,
             elevation: 0,
             centerTitle: true,
             title: const Text(

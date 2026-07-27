@@ -17,11 +17,12 @@ class AllCategoriesScreen extends StatelessWidget {
       backgroundColor: AppColors.background,
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+        cacheExtent: 500,
         slivers: [
           SliverAppBar(
             pinned: true,
             floating: true,
-            backgroundColor: AppColors.background.withOpacity(0.95),
+            backgroundColor: AppColors.background,
             elevation: 0,
             centerTitle: true,
             title: const Text(
@@ -45,9 +46,26 @@ class AllCategoriesScreen extends StatelessWidget {
                 final allWallpapers = wallpaperDocs.map((doc) => WallpaperModel.fromFirestore(doc.data() as Map<String, dynamic>, doc.id)).toList();
 
                 return StreamBuilder<QuerySnapshot>(
-                  stream: FirebaseFirestore.instance.collection('categories').orderBy('name').snapshots(),
+                  stream: FirebaseFirestore.instance.collection('categories').snapshots(),
                   builder: (context, catSnapshot) {
-                    final catDocs = catSnapshot.data?.docs ?? [];
+                    var catDocs = catSnapshot.data?.docs ?? [];
+                    
+                    // Sort locally to avoid Firestore composite index errors
+                    catDocs.sort((a, b) {
+                      final aData = a.data() as Map<String, dynamic>;
+                      final bData = b.data() as Map<String, dynamic>;
+                      final aOrder = aData['orderIndex'] ?? 0;
+                      final bOrder = bData['orderIndex'] ?? 0;
+                      
+                      if (aOrder != bOrder) {
+                        return aOrder.compareTo(bOrder);
+                      }
+                      
+                      final aName = aData['name'] ?? '';
+                      final bName = bData['name'] ?? '';
+                      return aName.compareTo(bName);
+                    });
+
                     final Set<String> uniqueCategories = {};
                     final Map<String, String> categoryCoverMap = {};
 
@@ -156,6 +174,7 @@ class _CategoryCard extends StatelessWidget {
                 CachedNetworkImage(
                   imageUrl: coverImageUrl!,
                   fit: BoxFit.cover,
+                  memCacheWidth: 400,
                   placeholder: (context, url) => Container(color: AppColors.surface),
                   errorWidget: (context, url, error) => const Icon(Icons.error, color: Colors.white54),
                 )

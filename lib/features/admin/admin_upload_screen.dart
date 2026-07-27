@@ -3,6 +3,7 @@ import '../../core/theme/colors.dart';
 import 'views/upload_view.dart';
 import 'views/manage_categories_view.dart';
 import 'views/manage_wallpapers_view.dart';
+import 'views/dashboard_overview_view.dart';
 
 class AdminDashboardScreen extends StatelessWidget {
   const AdminDashboardScreen({super.key});
@@ -10,7 +11,7 @@ class AdminDashboardScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         backgroundColor: AppColors.background,
         appBar: AppBar(
@@ -20,7 +21,10 @@ class AdminDashboardScreen extends StatelessWidget {
             indicatorColor: AppColors.accent,
             labelColor: AppColors.accent,
             unselectedLabelColor: Colors.white54,
+            isScrollable: true,
+            tabAlignment: TabAlignment.center,
             tabs: [
+              Tab(icon: Icon(Icons.dashboard), text: 'Overview'),
               Tab(icon: Icon(Icons.cloud_upload), text: 'Upload'),
               Tab(icon: Icon(Icons.category), text: 'Categories'),
               Tab(icon: Icon(Icons.image), text: 'Manage'),
@@ -29,6 +33,7 @@ class AdminDashboardScreen extends StatelessWidget {
         ),
         body: const TabBarView(
           children: [
+            DashboardOverviewView(),
             UploadView(),
             ManageCategoriesView(),
             ManageWallpapersView(),

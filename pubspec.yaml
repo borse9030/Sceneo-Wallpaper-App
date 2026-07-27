@@ -59,6 +59,8 @@ dependencies:
   firebase_messaging: ^16.4.3
   google_mobile_ads: ^9.0.0
   video_player: ^2.13.0
+  palette_generator: ^0.3.3+7
+  flutter_local_notifications: ^22.1.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

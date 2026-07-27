@@ -1,6 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
+
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -19,11 +19,12 @@ class FavoritesScreen extends StatelessWidget {
       backgroundColor: AppColors.background,
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+        cacheExtent: 500,
         slivers: [
           SliverAppBar(
             pinned: true,
             floating: true,
-            backgroundColor: AppColors.background.withOpacity(0.95),
+            backgroundColor: AppColors.background,
             elevation: 0,
             centerTitle: true,
             title: const Text(
@@ -50,7 +51,9 @@ class FavoritesScreen extends StatelessWidget {
               }
 
               final docs = snapshot.data?.docs ?? [];
-              final allWallpapers = docs.map((doc) => WallpaperModel.fromFirestore(doc.data() as Map<String, dynamic>, doc.id)).toList();
+              var allWallpapers = docs.map((doc) => WallpaperModel.fromFirestore(doc.data() as Map<String, dynamic>, doc.id)).toList();
+              
+              allWallpapers = allWallpapers.where((w) => w.status == 'published').toList();
               
               return ValueListenableBuilder(
                 valueListenable: Hive.box('favorites').listenable(),
@@ -70,14 +73,26 @@ class FavoritesScreen extends StatelessWidget {
 
                   return SliverPadding(
                     padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
-                    sliver: SliverMasonryGrid.count(
-                      crossAxisCount: 2,
-                      mainAxisSpacing: 16,
-                      crossAxisSpacing: 16,
-                      itemBuilder: (context, index) {
-                        return WallpaperGridItem(wallpaper: displayWallpapers[index], wallpapers: displayWallpapers, index: index, heroPrefix: 'fav_');
-                      },
-                      childCount: displayWallpapers.length,
+                    sliver: SliverGrid(
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        mainAxisSpacing: 16,
+                        crossAxisSpacing: 16,
+                        childAspectRatio: 0.58,
+                      ),
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          return RepaintBoundary(
+                            child: WallpaperGridItem(
+                              wallpaper: displayWallpapers[index], 
+                              wallpapers: displayWallpapers, 
+                              index: index, 
+                              heroPrefix: 'fav_'
+                            ),
+                          );
+                        },
+                        childCount: displayWallpapers.length,
+                      ),
                     ),
                   );
                 },

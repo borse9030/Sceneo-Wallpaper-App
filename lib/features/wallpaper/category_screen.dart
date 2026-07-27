@@ -1,7 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
+
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/models/wallpaper_model.dart';
@@ -22,11 +22,12 @@ class CategoryScreen extends StatelessWidget {
       backgroundColor: AppColors.background, // Match the app's standard background
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+        cacheExtent: 500,
         slivers: [
           SliverAppBar(
             pinned: true,
             floating: true,
-            backgroundColor: AppColors.background.withOpacity(0.95),
+            backgroundColor: AppColors.background,
             elevation: 0,
             leading: IconButton(
               icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
@@ -57,7 +58,10 @@ class CategoryScreen extends StatelessWidget {
               }
 
               final docs = snapshot.data?.docs ?? [];
-              final allWallpapers = docs.map((doc) => WallpaperModel.fromFirestore(doc.data() as Map<String, dynamic>, doc.id)).toList();
+              var allWallpapers = docs.map((doc) => WallpaperModel.fromFirestore(doc.data() as Map<String, dynamic>, doc.id)).toList();
+              
+              // Only show published wallpapers to users
+              allWallpapers = allWallpapers.where((w) => w.status == 'published').toList();
               
               final displayWallpapers = category == 'All' 
                   ? allWallpapers 
@@ -76,14 +80,26 @@ class CategoryScreen extends StatelessWidget {
 
               return SliverPadding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
-                sliver: SliverMasonryGrid.count(
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 16,
-                  crossAxisSpacing: 16,
-                  itemBuilder: (context, index) {
-                    return WallpaperGridItem(wallpaper: displayWallpapers[index], wallpapers: displayWallpapers, index: index, heroPrefix: 'cat_');
-                  },
-                  childCount: displayWallpapers.length,
+                sliver: SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 16,
+                    crossAxisSpacing: 16,
+                    childAspectRatio: 0.58,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      return RepaintBoundary(
+                        child: WallpaperGridItem(
+                          wallpaper: displayWallpapers[index], 
+                          wallpapers: displayWallpapers, 
+                          index: index, 
+                          heroPrefix: 'cat_'
+                        ),
+                      );
+                    },
+                    childCount: displayWallpapers.length,
+                  ),
                 ),
               );
             },

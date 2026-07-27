@@ -45,16 +45,19 @@ class WallpaperGridSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     return SliverPadding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
-      sliver: SliverMasonryGrid.count(
-        crossAxisCount: 2,
-        mainAxisSpacing: 16,
-        crossAxisSpacing: 16,
-        itemBuilder: (context, index) {
-          return SkeletonBox(
-            height: index % 2 == 0 ? 250 : 300,
-          );
-        },
-        childCount: itemCount,
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisSpacing: 16,
+          crossAxisSpacing: 16,
+          childAspectRatio: 0.58,
+        ),
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
+            return const SkeletonBox();
+          },
+          childCount: itemCount,
+        ),
       ),
     );
   }
